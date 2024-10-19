@@ -506,8 +506,8 @@ static game_params *default_params(void)
     ret->h = 10;
     ret->w = 10;
 #endif
-    ret->diff = DIFF_EASY;
-    ret->type = 0;
+    ret->diff = DIFF_HARD;
+    ret->type = 11;
 
     return ret;
 }
@@ -1194,6 +1194,23 @@ static void check_caches(const solver_state* sstate)
 #endif
 #endif /* DEBUG_CACHES */
 
+static void regenerate_caches(solver_state* sstate)
+{
+    int i;
+    const game_state *state = sstate->state;
+    const grid *g = state->game_grid;
+
+    for (i = 0; i < g->num_dots; i++) {
+        sstate->dot_yes_count[i] = dot_order(state, i, LINE_YES);
+        sstate->dot_no_count[i] = dot_order(state, i, LINE_NO);
+    }
+
+    for (i = 0; i < g->num_faces; i++) {
+        sstate->face_yes_count[i] = face_order(state, i, LINE_YES);
+        sstate->face_no_count[i] = face_order(state, i, LINE_NO);
+    }
+}
+
 /* ----------------------------------------------------------------------
  * Solver utility functions
  */
@@ -1569,6 +1586,21 @@ static char *new_game_desc(const game_params *params, random_state *rs,
     return retval;
 }
 
+static void apply_trivial_deductions(game_state **state)
+{
+    solver_state *sstate = new_solver_state(*state, DIFF_EASY);
+    regenerate_caches(sstate);
+    while (true) {
+        int diff = trivial_deductions(sstate);
+        if (diff == DIFF_MAX) break;
+        if (sstate->solver_status == SOLVER_MISTAKE) break;
+    }
+    free_game(*state);
+    *state = dup_game(sstate->state);
+cleanup:
+    free_solver_state(sstate);
+}
+
 static game_state *new_game(midend *me, const game_params *params,
                             const char *desc)
 {
@@ -1611,7 +1643,7 @@ static game_state *new_game(midend *me, const game_params *params,
         n2 = *dp - 'A' + 10;
         if (n >= 0 && n < 10) {
             state->clues[i] = n;
-	} else if (n2 >= 10 && n2 < 36) {
+        } else if (n2 >= 10 && n2 < 36) {
             state->clues[i] = n2;
         } else {
             n = *dp - 'a' + 1;
@@ -1624,6 +1656,7 @@ static game_state *new_game(midend *me, const game_params *params,
 
     memset(state->lines, LINE_UNKNOWN, num_edges);
     memset(state->line_errors, 0, num_edges * sizeof(bool));
+    apply_trivial_deductions(&state);
     return state;
 }
 
@@ -3199,6 +3232,8 @@ static game_state *execute_move(const game_state *state, const char *move)
 	    goto fail;
         }
     }
+
+    apply_trivial_deductions(&newstate);
 
     /*
      * Check for completion.
