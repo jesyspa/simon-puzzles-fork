@@ -1586,12 +1586,15 @@ static char *new_game_desc(const game_params *params, random_state *rs,
     return retval;
 }
 
+static int extra_trivial_deductions(solver_state *sstate);
+
 static void apply_trivial_deductions(game_state **state)
 {
     solver_state *sstate = new_solver_state(*state, DIFF_EASY);
     regenerate_caches(sstate);
     while (true) {
         int diff = trivial_deductions(sstate);
+        diff = min(diff, extra_trivial_deductions(sstate));
         if (diff == DIFF_MAX) break;
         if (sstate->solver_status == SOLVER_MISTAKE) break;
     }
@@ -2176,7 +2179,6 @@ static int parity_deductions(solver_state *sstate,
     return diff;
 }
 
-
 /*
  * These are the main solver functions.
  *
@@ -2362,6 +2364,122 @@ static int trivial_deductions(solver_state *sstate)
 
     check_caches(sstate);
 
+    return diff;
+}
+
+// For all faces that are known to be connected (i.e. reachable without crossing an edge),
+// set their color.
+// We use -1 to indicate that the color is unknown; if it's been set already, we should
+// not try to overwrite it.  However, for sanity we check that it is either a sentinel value
+// (i.e. < -1) or the color we were going to set it to.
+static void flood_fill_rec(solver_state *sstate, int *face_colors, grid_face *face, int color)
+{
+    if (face == NULL) return;
+    if (face_colors[face->index] != -1)
+    {
+        assert(face_colors[face->index] < -1 || face_colors[face->index] == color);
+        return;
+    }
+    face_colors[face->index] = color;
+
+    for (int i = 0; i < face->order; ++i)
+    {
+        grid_edge* edge = face->edges[i];
+        if (sstate->state->lines[edge->index] != LINE_NO) continue;
+        grid_face* other = edge->face1 == face ? edge->face2 : edge->face1;
+        flood_fill_rec(sstate, face_colors, other, color);
+    }
+}
+
+// Checks whether setting an edge would make a smaller loop, and unsets that edge if so.
+// We only check for individual edges: if two edges must be taken together and would
+// together make a smaller loop, we don't catch this.
+// To find smaller loops, we color all connected groups of faces and then see which
+// groups are adjacent to exactly one unknown edge.
+static int check_smaller_loop(solver_state *sstate)
+{
+    int diff = DIFF_MAX;
+
+    grid *grid = sstate->state->game_grid;
+
+    // We color the grid into groups of faces that are not known to be connected.
+    // The outside faces get color -2; faces that haven't been colored yet get colored -1.
+    int *colors = malloc( grid->num_faces * sizeof(int));
+    for (int i = 0; i < grid->num_faces; ++i)
+        colors[i] = -1;
+
+    // We start by ensuring that all faces that we know are on the outside are accounted for.
+    for (int i = 0; i < grid->num_edges; ++i)
+    {
+        grid_edge *edge = grid->edges[i];
+        if (sstate->state->lines[edge->index] != LINE_NO) continue;
+        grid_face *face = edge->face1 == NULL ? edge->face2 :
+                          edge->face2 == NULL ? edge->face1 :
+                          NULL;
+        flood_fill_rec(sstate, colors, face, -2);
+    }
+
+    int distinct_colors = 0;
+    for (int i = 0; i < grid->num_faces; ++i)
+    {
+        if (colors[i] == -1)
+            flood_fill_rec(sstate, colors, grid->faces[i], distinct_colors++);
+    }
+
+    // If everything is already connected, the puzzle is solved.
+    if (distinct_colors == 1) goto cleanup_early;
+
+    int *unknown_edges_per_color = calloc(distinct_colors, sizeof(int));
+    for (int i = 0; i < grid->num_faces; ++i)
+    {
+        if (colors[i] < 0) continue;
+        unknown_edges_per_color[colors[i]] += 
+            grid->faces[i]->order - sstate->face_yes_count[i] - sstate->face_no_count[i];
+    }
+
+    // We cache in which cases we would get a smaller loop, since otherwise
+    // we run into issues when we later check the neighbours.
+    char *smaller_loop_candidates = calloc(grid->num_faces, 1);
+    for (int i = 0; i < grid->num_faces; ++i)
+    {
+        if (colors[i] < 0) continue;
+        // printf("Face %d has %d unknown edges.\n", i, unknown_edges_per_color[colors[i]]);
+        smaller_loop_candidates[i] = unknown_edges_per_color[colors[i]] == 1;
+    }
+
+    for (int i = 0; i < grid->num_faces; ++i)
+    {
+        // Setting an edge on this face would make a smaller loop.
+        // Note that we know that there's one edge in the whole group of faces, so
+        // all faces but one are solved, and we know that that one edge is NO, since
+        // setting it would make a smaller loop.  Hence we can just set all unknown
+        // edges to no---in most faces there will be none, but this is not a problem.
+        if (smaller_loop_candidates[i])
+        {
+            if (face_setall(sstate, i, LINE_UNKNOWN, LINE_NO))
+                diff = min(diff, DIFF_EASY);
+            sstate->face_solved[i] = true;
+        }
+    }
+
+    check_caches(sstate);
+
+cleanup:
+    free(unknown_edges_per_color);
+    free(smaller_loop_candidates);
+cleanup_early:
+    free(colors);
+    return DIFF_MAX;
+}
+
+// Some more deductions that I want loopy to auto-perform for me, but that I don't want
+// to be used in puzzle generation (for one, because if they're buggy then that will be
+// a very miserable experience).
+static int extra_trivial_deductions(solver_state *sstate)
+{
+    // Writing it like this to make it easier to add more independent deductions.
+    int diff = DIFF_MAX;
+    diff = min(diff, check_smaller_loop(sstate));
     return diff;
 }
 
