@@ -1593,7 +1593,12 @@ static void apply_trivial_deductions(game_state **state)
     solver_state *sstate = new_solver_state(*state, DIFF_EASY);
     regenerate_caches(sstate);
     while (true) {
-        int diff = trivial_deductions(sstate);
+        int diff = DIFF_MAX;
+        while (true) {
+            int trivial_diff = trivial_deductions(sstate);
+            diff = min(diff, trivial_diff);
+            if (trivial_diff == DIFF_MAX) break;
+        }
         diff = min(diff, extra_trivial_deductions(sstate));
         if (diff == DIFF_MAX) break;
         if (sstate->solver_status == SOLVER_MISTAKE) break;
