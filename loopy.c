@@ -2469,7 +2469,7 @@ cleanup:
     free(smaller_loop_candidates);
 cleanup_early:
     free(colors);
-    return DIFF_MAX;
+    return diff;
 }
 
 // Some more deductions that I want loopy to auto-perform for me, but that I don't want
