@@ -2429,11 +2429,36 @@ static int check_smaller_loop(solver_state *sstate)
     // If everything is already connected, the puzzle is solved.
     if (distinct_colors == 1) goto cleanup_early;
 
+    int yes_adjacent_colors = 0;
+    bool *has_adjacent_yes = calloc(distinct_colors, sizeof(bool));
+
+    // Check each face for adjacent "yes" edges.
+    for (int i = 0; i < grid->num_faces; ++i) {
+        grid_face *face = grid->faces[i];
+        for (int j = 0; j < face->order; ++j) {
+            grid_edge *edge = face->edges[j];
+            if (sstate->state->lines[edge->index] == LINE_YES) {
+                if (colors[face->index] >= 0) {
+                    has_adjacent_yes[colors[face->index]] = true;
+                }
+            }
+        }
+    }
+
+    // Count the number of colours with adjacent "yes" edges.
+    for (int i = 0; i < distinct_colors; ++i) {
+        if (has_adjacent_yes[i])
+            yes_adjacent_colors++;
+    }
+
+    // Return early if there are fewer than two such colours.
+    if (yes_adjacent_colors < 2) goto cleanup_middle;
+
     int *unknown_edges_per_color = calloc(distinct_colors, sizeof(int));
     for (int i = 0; i < grid->num_faces; ++i)
     {
         if (colors[i] < 0) continue;
-        unknown_edges_per_color[colors[i]] += 
+        unknown_edges_per_color[colors[i]] +=
             grid->faces[i]->order - sstate->face_yes_count[i] - sstate->face_no_count[i];
     }
 
@@ -2464,9 +2489,12 @@ static int check_smaller_loop(solver_state *sstate)
 
     check_caches(sstate);
 
+
 cleanup:
-    free(unknown_edges_per_color);
     free(smaller_loop_candidates);
+    free(unknown_edges_per_color);
+cleanup_middle:
+    free(has_adjacent_yes);
 cleanup_early:
     free(colors);
     return diff;
