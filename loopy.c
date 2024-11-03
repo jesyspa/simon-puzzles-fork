@@ -1598,11 +1598,13 @@ static void apply_trivial_deductions(game_state **state)
             int trivial_diff = trivial_deductions(sstate);
             diff = min(diff, trivial_diff);
             if (trivial_diff == DIFF_MAX) break;
+            if (sstate->solver_status == SOLVER_MISTAKE) goto deep_break;
         }
         diff = min(diff, extra_trivial_deductions(sstate));
         if (diff == DIFF_MAX) break;
         if (sstate->solver_status == SOLVER_MISTAKE) break;
     }
+deep_break:
     free_game(*state);
     *state = dup_game(sstate->state);
 cleanup:
