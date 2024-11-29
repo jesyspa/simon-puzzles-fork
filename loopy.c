@@ -133,6 +133,13 @@ struct game_state {
     int grid_type;
 };
 
+/* Much quicker to allocate arrays on the stack than the heap, so
+    * define the largest possible face size, and base our array allocations
+    * on that.  We check this with an assertion, in case someone decides to
+    * make a grid which has larger faces than this.  Note, this algorithm
+    * could get quite expensive if there are many large faces. */
+#define MAX_FACE_SIZE 14
+
 enum solver_status {
     SOLVER_SOLVED,    /* This is the only solution the solver could find */
     SOLVER_MISTAKE,   /* This is definitely not a solution */
@@ -1615,7 +1622,8 @@ static void apply_trivial_deductions(game_state **state)
             if (trivial_diff == DIFF_MAX) break;
             if (sstate->solver_status == SOLVER_MISTAKE) goto deep_break;
         }
-        diff = min(diff, extra_trivial_deductions(sstate));
+        int extra_deductions_diff = extra_trivial_deductions(sstate);
+        diff = min(diff, extra_deductions_diff);
         if (diff == DIFF_MAX) break;
         if (sstate->solver_status == SOLVER_MISTAKE) break;
     }
@@ -2514,7 +2522,6 @@ static int check_smaller_loop(solver_state *sstate)
     for (int i = 0; i < grid->num_faces; ++i)
     {
         if (dist.colours[i] < 0) continue;
-        // printf("Face %d has %d unknown edges.\n", i, unknown_edges_per_colour[colours[i]]);
         smaller_loop_candidates[i] = unknown_edges_per_colour[dist.colours[i]] == 1;
     }
 
@@ -2546,15 +2553,101 @@ cleanup_early:
     return diff;
 }
 
+// Returns the other unknown edge adjacent face f, if that is the only way to continue from
+// the edge e on the side of d.
+static grid_edge* find_next_unknown_edge(solver_state *sstate, grid_face *f, grid_edge *e, grid_dot *d)
+{
+    game_state *state = sstate->state;
+
+    if (sstate->dot_yes_count[d->index] > 0) return NULL;
+    
+    int unknown = d->order - sstate->dot_no_count[d->index];
+    if (unknown != 2) return NULL;
+
+    for (int k = 0; k < d->order; k++) {
+        grid_edge *e2 = d->edges[k];
+        if (e != e2 && state->lines[e2->index] == LINE_UNKNOWN && (e2->face1 == f || e2->face2 == f)) {
+            return e2;
+        }
+    }
+    return NULL;
+}
+
+// Deductions based on multiple adjacent edges of the same face, which must be taken
+// or not taken together.
+static int trivial_arc_deductions(solver_state *sstate)
+{
+    int diff = DIFF_MAX;
+    game_state *state = sstate->state;
+    grid *g = state->game_grid;
+    for (int i = 0; i < g->num_faces; i++) {
+        grid_face *f = g->faces[i];
+
+        if (sstate->face_solved[i] || state->clues[i] < 0)
+            continue;
+
+        int current_yes = sstate->face_yes_count[i];
+        int current_no  = sstate->face_no_count[i];
+
+        // From every unknown edge with one neighbouring unknown edge, we try to walk along the face
+        // until we find the maximum length arc.
+        for (int j = 0; j < f->order; j++) {
+            grid_edge *start_e = f->edges[j];
+            if (state->lines[start_e->index] != LINE_UNKNOWN) continue;
+            grid_edge *next_left = find_next_unknown_edge(sstate, f, start_e, start_e->dot1);
+            grid_edge *next_right = find_next_unknown_edge(sstate, f, start_e, start_e->dot2);
+            // We only want to follow it if we can go along it in one direction, so if both are
+            // NULL or neither is NULL, there's nothing to do.
+            if ((next_left != NULL) == (next_right != NULL)) continue;
+
+            grid_dot *last_dot = next_left ? start_e->dot1 : start_e->dot2;
+
+            grid_edge *edges[MAX_FACE_SIZE];
+            int length = 1;
+            edges[0] = start_e;
+            while (length < f->order) {
+                grid_edge *next_edge = find_next_unknown_edge(sstate, f, edges[length-1], last_dot);
+                if (next_edge == NULL) break;
+
+                edges[length++] = next_edge;
+                last_dot = next_edge->dot1 == last_dot ? next_edge->dot2 : next_edge->dot1;
+            }
+            if (length == 1) continue;
+
+            // Cannot take the arc since it would exceed the clue size.
+            if (current_yes + length > state->clues[i]) {
+                for (int k = 0; k < length; k++) {
+                    bool r = solver_set_line(sstate, edges[k]->index, LINE_NO);
+                    assert(r);
+                    diff = min(diff, DIFF_EASY);
+                }
+            }
+            // Must take the arc since we can't get enough edges otherwise.
+            else if (f->order - current_no - length < state->clues[i]) {
+                for (int k = 0; k < length; k++) {
+                    bool r = solver_set_line(sstate, edges[k]->index, LINE_YES);
+                    assert(r);
+                    diff = min(diff, DIFF_EASY);
+                }
+            }
+        }
+    }
+    return diff;
+}
+
 // Some more deductions that I want loopy to auto-perform for me, but that I don't want
 // to be used in puzzle generation (for one, because if they're buggy then that will be
 // a very miserable experience).
 static int extra_trivial_deductions(solver_state *sstate)
 {
-    // Writing it like this to make it easier to add more independent deductions.
-    int diff = DIFF_MAX;
-    diff = min(diff, check_smaller_loop(sstate));
-    return diff;
+    // We only perform one at a time, so that we know that all trivial deductions
+    // have been performed before we try these.  This is mostly necessary because
+    // check_smaller_loop is sensitive to those for correctness.
+    int trivial_arc_diff = trivial_arc_deductions(sstate);
+    if (trivial_arc_diff != DIFF_MAX) return trivial_arc_diff; 
+    int smaller_loop_diff = check_smaller_loop(sstate);
+    if (smaller_loop_diff != DIFF_MAX) return smaller_loop_diff;
+    return DIFF_MAX;
 }
 
 static int dline_deductions(solver_state *sstate)
@@ -2600,13 +2693,6 @@ static int dline_deductions(solver_state *sstate)
      * We could then deduce edge4 is YES, because maxs(0,4) would be 2, so
      * that final edge would have to be YES to make the count up to 3.
      */
-
-    /* Much quicker to allocate arrays on the stack than the heap, so
-     * define the largest possible face size, and base our array allocations
-     * on that.  We check this with an assertion, in case someone decides to
-     * make a grid which has larger faces than this.  Note, this algorithm
-     * could get quite expensive if there are many large faces. */
-#define MAX_FACE_SIZE 14
 
     for (i = 0; i < g->num_faces; i++) {
         int maxs[MAX_FACE_SIZE][MAX_FACE_SIZE];
