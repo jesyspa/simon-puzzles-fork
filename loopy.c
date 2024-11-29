@@ -503,11 +503,11 @@ static game_params *default_params(void)
     ret->h = 7;
     ret->w = 7;
 #else
-    ret->h = 10;
-    ret->w = 10;
+    ret->h = 8;
+    ret->w = 8;
 #endif
     ret->diff = DIFF_HARD;
-    ret->type = 11;
+    ret->type = LOOPY_GRID_OCTAGONAL;
 
     return ret;
 }
@@ -532,18 +532,22 @@ static const game_params loopy_presets_top[] = {
     {  6,  6, DIFF_HARD,   LOOPY_GRID_PENROSE_P2 },
     {  6,  6, DIFF_HARD,   LOOPY_GRID_PENROSE_P3 },
 #else
-    {  7,  7, DIFF_EASY,   LOOPY_GRID_SQUARE },
-    { 10, 10, DIFF_EASY,   LOOPY_GRID_SQUARE },
-    {  7,  7, DIFF_NORMAL, LOOPY_GRID_SQUARE },
-    { 10, 10, DIFF_NORMAL, LOOPY_GRID_SQUARE },
+//    {  7,  7, DIFF_EASY,   LOOPY_GRID_SQUARE },
+//    { 10, 10, DIFF_EASY,   LOOPY_GRID_SQUARE },
+//    {  7,  7, DIFF_NORMAL, LOOPY_GRID_SQUARE },
+//    { 10, 10, DIFF_NORMAL, LOOPY_GRID_SQUARE },
     {  7,  7, DIFF_HARD,   LOOPY_GRID_SQUARE },
     { 10, 10, DIFF_HARD,   LOOPY_GRID_SQUARE },
     { 12, 10, DIFF_HARD,   LOOPY_GRID_TRIANGULAR },
     {  7,  7, DIFF_HARD,   LOOPY_GRID_SNUBSQUARE },
+    { 10, 10, DIFF_HARD,   LOOPY_GRID_HONEYCOMB },
+    {  5,  4, DIFF_HARD,   LOOPY_GRID_KAGOME },
     {  9,  9, DIFF_HARD,   LOOPY_GRID_CAIRO },
     {  5,  5, DIFF_HARD,   LOOPY_GRID_KITE },
-    { 10, 10, DIFF_HARD,   LOOPY_GRID_PENROSE_P2 },
-    { 10, 10, DIFF_HARD,   LOOPY_GRID_PENROSE_P3 },
+    {  8,  8, DIFF_HARD,   LOOPY_GRID_OCTAGONAL },
+    {  5,  5, DIFF_HARD,   LOOPY_GRID_FLORET },
+    { 12, 12, DIFF_HARD,   LOOPY_GRID_PENROSE_P2 },
+    { 12, 12, DIFF_HARD,   LOOPY_GRID_PENROSE_P3 },
 #endif
 };
 
@@ -561,11 +565,7 @@ static const game_params loopy_presets_more[] = {
     {  6,  6, DIFF_HARD,   LOOPY_GRID_HATS },
     {  6,  6, DIFF_HARD,   LOOPY_GRID_SPECTRES },
 #else
-    { 10, 10, DIFF_HARD,   LOOPY_GRID_HONEYCOMB },
     {  5,  4, DIFF_HARD,   LOOPY_GRID_GREATHEXAGONAL },
-    {  5,  4, DIFF_HARD,   LOOPY_GRID_KAGOME },
-    {  7,  7, DIFF_HARD,   LOOPY_GRID_OCTAGONAL },
-    {  5,  5, DIFF_HARD,   LOOPY_GRID_FLORET },
     {  5,  4, DIFF_HARD,   LOOPY_GRID_DODECAGONAL },
     {  5,  4, DIFF_HARD,   LOOPY_GRID_GREATDODECAGONAL },
     {  5,  3, DIFF_HARD,   LOOPY_GRID_GREATGREATDODECAGONAL },
