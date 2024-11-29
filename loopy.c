@@ -2390,33 +2390,33 @@ static int trivial_deductions(solver_state *sstate)
 }
 
 typedef struct {
-    int distinct_colors;
-    int* colors;
-    int* color_uses;
-} color_distribution;
+    int distinct_colours;
+    int* colours;
+    int* colour_uses;
+} colour_distribution;
 
-static void free_color_distribution(color_distribution *dist)
+static void free_colour_distribution(colour_distribution *dist)
 {
-    free(dist->colors);
-    free(dist->color_uses);
+    free(dist->colours);
+    free(dist->colour_uses);
 }
 
 // For all faces that are known to be connected (i.e. reachable without crossing an edge),
-// set their color.
-// We use -1 to indicate that the color is unknown; if it's been set already, we should
+// set their colour.
+// We use -1 to indicate that the colour is unknown; if it's been set already, we should
 // not try to overwrite it.  However, for sanity we check that it is either a sentinel value
-// (i.e. < -1) or the color we were going to set it to.
-static void flood_fill_rec(const game_state *state, color_distribution *dist, grid_face *face, int color)
+// (i.e. < -1) or the colour we were going to set it to.
+static void flood_fill_rec(const game_state *state, colour_distribution *dist, grid_face *face, int colour)
 {
     if (face == NULL) return;
-    if (dist->colors[face->index] != -1)
+    if (dist->colours[face->index] != -1)
     {
-        assert(dist->colors[face->index] < -1 || dist->colors[face->index] == color);
+        assert(dist->colours[face->index] < -1 || dist->colours[face->index] == colour);
         return;
     }
-    dist->colors[face->index] = color;
-    if (color >= 0) {
-        dist->color_uses[color]++;
+    dist->colours[face->index] = colour;
+    if (colour >= 0) {
+        dist->colour_uses[colour]++;
     }
 
     for (int i = 0; i < face->order; ++i)
@@ -2424,21 +2424,21 @@ static void flood_fill_rec(const game_state *state, color_distribution *dist, gr
         grid_edge* edge = face->edges[i];
         if (state->lines[edge->index] != LINE_NO) continue;
         grid_face* other = edge->face1 == face ? edge->face2 : edge->face1;
-        flood_fill_rec(state, dist, other, color);
+        flood_fill_rec(state, dist, other, colour);
     }
 }
 
 // Color the different segments of the grid, giving connected faces the same colour.
-static color_distribution make_grid_colors(const game_state *state)
+static colour_distribution make_grid_colours(const game_state *state)
 {
     grid *grid = state->game_grid;
-    color_distribution result = {
+    colour_distribution result = {
         0,
         malloc(grid->num_faces * sizeof(int)),
         calloc(grid->num_faces, sizeof(int))
     };
     for (int i = 0; i < grid->num_faces; ++i)
-        result.colors[i] = -1;
+        result.colours[i] = -1;
 
     // We start by ensuring that all faces that we know are on the outside are accounted for.
     for (int i = 0; i < grid->num_edges; ++i)
@@ -2453,8 +2453,8 @@ static color_distribution make_grid_colors(const game_state *state)
 
     for (int i = 0; i < grid->num_faces; ++i)
     {
-        if (result.colors[i] == -1)
-            flood_fill_rec(state, &result, grid->faces[i], result.distinct_colors++);
+        if (result.colours[i] == -1)
+            flood_fill_rec(state, &result, grid->faces[i], result.distinct_colours++);
     }
 
     return result;
@@ -2463,20 +2463,20 @@ static color_distribution make_grid_colors(const game_state *state)
 // Checks whether setting an edge would make a smaller loop, and unsets that edge if so.
 // We only check for individual edges: if two edges must be taken together and would
 // together make a smaller loop, we don't catch this.
-// To find smaller loops, we color all connected groups of faces and then see which
+// To find smaller loops, we colour all connected groups of faces and then see which
 // groups are adjacent to exactly one unknown edge.
 static int check_smaller_loop(solver_state *sstate)
 {
     int diff = DIFF_MAX;
 
-    color_distribution dist = make_grid_colors(sstate->state);
+    colour_distribution dist = make_grid_colours(sstate->state);
     grid *grid = sstate->state->game_grid;
 
     // If everything is already connected, the puzzle is solved.
-    if (dist.distinct_colors == 1) goto cleanup_early;
+    if (dist.distinct_colours == 1) goto cleanup_early;
 
-    int yes_adjacent_colors = 0;
-    bool *has_adjacent_yes = calloc(dist.distinct_colors, sizeof(bool));
+    int yes_adjacent_colours = 0;
+    bool *has_adjacent_yes = calloc(dist.distinct_colours, sizeof(bool));
 
     // Check each face for adjacent "yes" edges.
     for (int i = 0; i < grid->num_faces; ++i) {
@@ -2484,27 +2484,27 @@ static int check_smaller_loop(solver_state *sstate)
         for (int j = 0; j < face->order; ++j) {
             grid_edge *edge = face->edges[j];
             if (sstate->state->lines[edge->index] == LINE_YES) {
-                if (dist.colors[face->index] >= 0) {
-                    has_adjacent_yes[dist.colors[face->index]] = true;
+                if (dist.colours[face->index] >= 0) {
+                    has_adjacent_yes[dist.colours[face->index]] = true;
                 }
             }
         }
     }
 
     // Count the number of colours with adjacent "yes" edges.
-    for (int i = 0; i < dist.distinct_colors; ++i) {
+    for (int i = 0; i < dist.distinct_colours; ++i) {
         if (has_adjacent_yes[i])
-            yes_adjacent_colors++;
+            yes_adjacent_colours++;
     }
 
     // Return early if there are fewer than two such colours.
-    if (yes_adjacent_colors < 2) goto cleanup_middle;
+    if (yes_adjacent_colours < 2) goto cleanup_middle;
 
-    int *unknown_edges_per_color = calloc(dist.distinct_colors, sizeof(int));
+    int *unknown_edges_per_colour = calloc(dist.distinct_colours, sizeof(int));
     for (int i = 0; i < grid->num_faces; ++i)
     {
-        if (dist.colors[i] < 0) continue;
-        unknown_edges_per_color[dist.colors[i]] +=
+        if (dist.colours[i] < 0) continue;
+        unknown_edges_per_colour[dist.colours[i]] +=
             grid->faces[i]->order - sstate->face_yes_count[i] - sstate->face_no_count[i];
     }
 
@@ -2513,9 +2513,9 @@ static int check_smaller_loop(solver_state *sstate)
     char *smaller_loop_candidates = calloc(grid->num_faces, 1);
     for (int i = 0; i < grid->num_faces; ++i)
     {
-        if (dist.colors[i] < 0) continue;
-        // printf("Face %d has %d unknown edges.\n", i, unknown_edges_per_color[colors[i]]);
-        smaller_loop_candidates[i] = unknown_edges_per_color[dist.colors[i]] == 1;
+        if (dist.colours[i] < 0) continue;
+        // printf("Face %d has %d unknown edges.\n", i, unknown_edges_per_colour[colours[i]]);
+        smaller_loop_candidates[i] = unknown_edges_per_colour[dist.colours[i]] == 1;
     }
 
     for (int i = 0; i < grid->num_faces; ++i)
@@ -2538,11 +2538,11 @@ static int check_smaller_loop(solver_state *sstate)
 
 cleanup:
     free(smaller_loop_candidates);
-    free(unknown_edges_per_color);
+    free(unknown_edges_per_colour);
 cleanup_middle:
     free(has_adjacent_yes);
 cleanup_early:
-    free_color_distribution(&dist);
+    free_colour_distribution(&dist);
     return diff;
 }
 
@@ -3630,7 +3630,7 @@ static void game_redraw_in_rect(drawing *dr, game_drawstate *ds,
                                 const game_ui *ui, const game_state *state,
                                 int x, int y, int w, int h)
 {
-    color_distribution dist = make_grid_colors(state);
+    colour_distribution dist = make_grid_colours(state);
     grid *g = state->game_grid;
     int i, phase;
     int bx, by, bw, bh;
@@ -3639,7 +3639,7 @@ static void game_redraw_in_rect(drawing *dr, game_drawstate *ds,
     draw_rect(dr, x, y, w, h, COL_BACKGROUND);
 
     for (i = 0; i < g->num_faces; i++) {
-        if (dist.colors[i] >= 0) {
+        if (dist.colours[i] >= 0) {
             grid_face *f = g->faces[i];
 
             int points[MAX_FACE_SIZE*2];
@@ -3648,8 +3648,8 @@ static void game_redraw_in_rect(drawing *dr, game_drawstate *ds,
                 grid_to_screen(ds, g, f->dots[j]->x, f->dots[j]->y, &points[2*j], &points[2*j+1]);
             }
             // We use a separate colour for small regions to make large ones stand out more.
-            int color = dist.color_uses[dist.colors[i]] < 3 ? COL_SMALL_REGION : NCOLOURS + (dist.colors[i] % SHADES_OF_GREY);
-            draw_polygon(dr, points, f->order, color, color);
+            int colour = dist.colour_uses[dist.colours[i]] < 3 ? COL_SMALL_REGION : NCOLOURS + (dist.colours[i] % SHADES_OF_GREY);
+            draw_polygon(dr, points, f->order, colour, colour);
         }
         if (state->clues[i] >= 0) {
             face_text_bbox(ds, g, g->faces[i], &bx, &by, &bw, &bh);
@@ -3670,7 +3670,7 @@ static void game_redraw_in_rect(drawing *dr, game_drawstate *ds,
             game_redraw_dot(dr, ds, state, i);
     }
 
-    free_color_distribution(&dist);
+    free_colour_distribution(&dist);
     unclip(dr);
     draw_update(dr, x, y, w, h);
 }
