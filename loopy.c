@@ -1005,7 +1005,7 @@ static float *game_colours(frontend *fe, int *ncolours)
 {
     // In addition to the main game colours, we have some greyscale colours to represent the
     // colours of the different areas.
-#define SHADES_OF_GREY 8
+#define SHADES_OF_GREY 6
     float *ret = snewn(3 * (NCOLOURS + SHADES_OF_GREY), float);
 
     frontend_default_colour(fe, &ret[COL_BACKGROUND * 3]);
@@ -1048,11 +1048,20 @@ static float *game_colours(frontend *fe, int *ncolours)
     ret[COL_SMALL_REGION * 3 + 1] = ret[COL_BACKGROUND * 3 + 1] * 0.96F;
     ret[COL_SMALL_REGION * 3 + 2] = ret[COL_BACKGROUND * 3 + 2] * 0.96F;
 
-    for (int i = 0; i < SHADES_OF_GREY; i++) {
-        float multiplier = 0.85f + 0.1f * i / SHADES_OF_GREY;
-        ret[3*(NCOLOURS + i) + 0] = ret[COL_BACKGROUND * 3 + 0] * multiplier;
-        ret[3*(NCOLOURS + i) + 1] = ret[COL_BACKGROUND * 3 + 1];
-        ret[3*(NCOLOURS + i) + 2] = ret[COL_BACKGROUND * 3 + 2] * multiplier;
+    // Set up colours that differ slightly so as to highlight regions.
+    for (int i = 0; i < SHADES_OF_GREY / 3; i++) {
+        float multiplier = 0.8f + 0.1f * i * 3 / SHADES_OF_GREY;
+        ret[3*(NCOLOURS + 3*i + 0) + 0] = ret[COL_BACKGROUND * 3 + 0] * multiplier;
+        ret[3*(NCOLOURS + 3*i + 0) + 1] = ret[COL_BACKGROUND * 3 + 1];
+        ret[3*(NCOLOURS + 3*i + 0) + 2] = ret[COL_BACKGROUND * 3 + 2] * multiplier;
+
+        ret[3*(NCOLOURS + 3*i + 1) + 0] = ret[COL_BACKGROUND * 3 + 0];
+        ret[3*(NCOLOURS + 3*i + 1) + 1] = ret[COL_BACKGROUND * 3 + 1] * multiplier;
+        ret[3*(NCOLOURS + 3*i + 1) + 2] = ret[COL_BACKGROUND * 3 + 2] * multiplier;
+
+        ret[3*(NCOLOURS + 3*i + 2) + 0] = ret[COL_BACKGROUND * 3 + 0] * multiplier;
+        ret[3*(NCOLOURS + 3*i + 2) + 1] = ret[COL_BACKGROUND * 3 + 1] * multiplier;
+        ret[3*(NCOLOURS + 3*i + 2) + 2] = ret[COL_BACKGROUND * 3 + 2];
     }
 
     *ncolours = NCOLOURS + SHADES_OF_GREY;
