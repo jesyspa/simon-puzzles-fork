@@ -2648,7 +2648,7 @@ static int trivial_arc_deductions(solver_state *sstate)
 // them without necessarily knowing anything about the face's own edges.
 // In particular:
 // - If one edge is unknown, we can use the number of YES edges and parity to determine its state.
-// - If two edges are unknown, no edges are YES, and the face contains a clue then we know both
+// - If two edges are unknown, no edges are YES, and the face contains a non-zero clue then we know both
 //   must be YES.
 // We assume that no dots on the same face are connected by an edge not adjacent to that face.
 static int incident_edge_deductions(solver_state *sstate)
@@ -2686,7 +2686,7 @@ static int incident_edge_deductions(solver_state *sstate)
                     diff = min(diff, DIFF_EASY);
                 }
             }
-        } else if (num_incident_unknown == 2 && num_incident_yes == 0 && state->clues[i] >= 0) {
+        } else if (num_incident_unknown == 2 && num_incident_yes == 0 && state->clues[i] > 0) {
             for (int j = 0; j < f->order; j++) {
                 grid_dot *d = f->dots[j];
                 if (sstate->dot_solved[d->index]) continue;
