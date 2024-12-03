@@ -2644,6 +2644,67 @@ static int trivial_arc_deductions(solver_state *sstate)
     return diff;
 }
 
+// When a face has very few unknown incident edges, we can often deduce something about
+// them without necessarily knowing anything about the face's own edges.
+// In particular:
+// - If one edge is unknown, we can use the number of YES edges and parity to determine its state.
+// - If two edges are unknown, no edges are YES, and the face contains a clue then we know both
+//   must be YES.
+// We assume that no dots on the same face are connected by an edge not adjacent to that face.
+static int incident_edge_deductions(solver_state *sstate)
+{
+    int diff = DIFF_MAX;
+    game_state *state = sstate->state;
+    grid *g = state->game_grid;
+
+    for (int i = 0; i < g->num_faces; i++) {
+        // We don't want to go through all the edges of all dots, so we instead compute as follows:
+        // every dot has two edges that are on the face itself, so we account those beforehand.
+        grid_face *f = g->faces[i];
+        int num_incident = -2*f->order;
+        int num_incident_no = -2*sstate->face_no_count[i];
+        int num_incident_yes = -2*sstate->face_yes_count[i];
+
+        for (int j = 0; j < f->order; j++) {
+            grid_dot *d = f->dots[j];
+            num_incident += d->order;
+            num_incident_no += sstate->dot_no_count[d->index];
+            num_incident_yes += sstate->dot_yes_count[d->index];
+        }
+
+        int num_incident_unknown = num_incident - num_incident_no - num_incident_yes;
+        if (num_incident_unknown == 1) {
+            for (int j = 0; j < f->order; j++) {
+                grid_dot *d = f->dots[j];
+                if (sstate->dot_solved[d->index]) continue;
+
+                for (int k = 0; k < d->order; k++) {
+                    grid_edge *e = d->edges[k];
+                    if (state->lines[e->index] != LINE_UNKNOWN || e->face1 == f || e->face2 == f) continue;
+                    bool r = solver_set_line(sstate, e->index, num_incident_yes % 2 == 1 ? LINE_YES : LINE_NO);
+                    assert(r);
+                    diff = min(diff, DIFF_EASY);
+                }
+            }
+        } else if (num_incident_unknown == 2 && num_incident_yes == 0 && state->clues[i] >= 0) {
+            for (int j = 0; j < f->order; j++) {
+                grid_dot *d = f->dots[j];
+                if (sstate->dot_solved[d->index]) continue;
+
+                for (int k = 0; k < d->order; k++) {
+                    grid_edge *e = d->edges[k];
+                    if (state->lines[e->index] != LINE_UNKNOWN || e->face1 == f || e->face2 == f) continue;
+                    bool r = solver_set_line(sstate, e->index, LINE_YES);
+                    assert(r);
+                    diff = min(diff, DIFF_EASY);
+                }
+            }
+        }
+    }
+    return diff;
+}
+
+
 // Some more deductions that I want loopy to auto-perform for me, but that I don't want
 // to be used in puzzle generation (for one, because if they're buggy then that will be
 // a very miserable experience).
@@ -2652,6 +2713,8 @@ static int extra_trivial_deductions(solver_state *sstate)
     // We only perform one at a time, so that we know that all trivial deductions
     // have been performed before we try these.  This is mostly necessary because
     // check_smaller_loop is sensitive to those for correctness.
+    int incident_edge_diff = incident_edge_deductions(sstate);
+    if (incident_edge_diff != DIFF_MAX) return incident_edge_diff;
     int trivial_arc_diff = trivial_arc_deductions(sstate);
     if (trivial_arc_diff != DIFF_MAX) return trivial_arc_diff; 
     int smaller_loop_diff = check_smaller_loop(sstate);
