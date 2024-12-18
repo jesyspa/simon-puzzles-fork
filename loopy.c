@@ -511,8 +511,8 @@ static game_params *default_params(void)
     ret->h = 7;
     ret->w = 7;
 #else
-    ret->h = 8;
-    ret->w = 8;
+    ret->h = 10;
+    ret->w = 10;
 #endif
     ret->diff = DIFF_HARD;
     ret->type = LOOPY_GRID_OCTAGONAL;
@@ -552,7 +552,7 @@ static const game_params loopy_presets_top[] = {
     {  5,  4, DIFF_HARD,   LOOPY_GRID_KAGOME },
     {  9,  9, DIFF_HARD,   LOOPY_GRID_CAIRO },
     {  5,  5, DIFF_HARD,   LOOPY_GRID_KITE },
-    {  8,  8, DIFF_HARD,   LOOPY_GRID_OCTAGONAL },
+    {  10, 10, DIFF_HARD,   LOOPY_GRID_OCTAGONAL },
     {  5,  5, DIFF_HARD,   LOOPY_GRID_FLORET },
     { 12, 12, DIFF_HARD,   LOOPY_GRID_PENROSE_P2 },
     { 12, 12, DIFF_HARD,   LOOPY_GRID_PENROSE_P3 },
