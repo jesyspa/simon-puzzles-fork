@@ -1617,31 +1617,10 @@ static char *new_game_desc(const game_params *params, random_state *rs,
     return retval;
 }
 
-static int extra_trivial_deductions(solver_state *sstate);
 
-static void apply_trivial_deductions(game_state **state)
-{
-    solver_state *sstate = new_solver_state(*state, DIFF_EASY);
-    regenerate_caches(sstate);
-    while (true) {
-        int diff = DIFF_MAX;
-        while (true) {
-            int trivial_diff = trivial_deductions(sstate);
-            diff = min(diff, trivial_diff);
-            if (trivial_diff == DIFF_MAX) break;
-            if (sstate->solver_status == SOLVER_MISTAKE) goto deep_break;
-        }
-        int extra_deductions_diff = extra_trivial_deductions(sstate);
-        diff = min(diff, extra_deductions_diff);
-        if (diff == DIFF_MAX) break;
-        if (sstate->solver_status == SOLVER_MISTAKE) break;
-    }
-deep_break:
-    free_game(*state);
-    *state = dup_game(sstate->state);
-cleanup:
-    free_solver_state(sstate);
-}
+static int extra_trivial_deductions(solver_state *sstate);
+static void apply_startup_deductions(game_state **state);
+static void apply_trivial_deductions(game_state **state);
 
 static game_state *new_game(midend *me, const game_params *params,
                             const char *desc)
@@ -1698,6 +1677,7 @@ static game_state *new_game(midend *me, const game_params *params,
 
     memset(state->lines, LINE_UNKNOWN, num_edges);
     memset(state->line_errors, 0, num_edges * sizeof(bool));
+    apply_startup_deductions(&state);
     apply_trivial_deductions(&state);
     return state;
 }
@@ -2406,6 +2386,110 @@ static int trivial_deductions(solver_state *sstate)
     return diff;
 }
 
+static int set_except_adjacent(solver_state *sstate, grid_edge *e, grid_face *f, grid_edge **adj)
+{
+    int diff = DIFF_MAX;
+    int k = 0;
+    grid_dot* d1 = e->dot1;
+    grid_dot* d2 = e->dot2;
+    for (int i = 0; i < f->order; i++) {
+        grid_edge* e2 = f->edges[i];
+        if (e2->dot1 == d1 || e2->dot1 == d2 || e2->dot2 == d1 || e2->dot2 == d2) {
+            // Handle the case when this is actually just e, since in that case it
+            // should also be set to YES.
+            if (e != e2) {
+                adj[k++] = e2;
+                continue;
+            }
+        }
+        if (solver_set_line(sstate, e2->index, LINE_YES)) {
+            diff = min(diff, DIFF_EASY);
+        }
+    }
+    return diff;
+}
+
+static int set_around_dot_except(solver_state *sstate, grid_dot *d, grid_edge **exc, int num_exc)
+{
+    int diff = DIFF_MAX;
+    for (int i = 0; i < d->order; i++) {
+        grid_edge *e = d->edges[i];
+        for (int j = 0; j < num_exc; j++) {
+            if (e == exc[j]) goto skip_edge;
+        }
+
+        if (solver_set_line(sstate, e->index, LINE_NO)) {
+            diff = min(diff, DIFF_EASY);
+        }
+
+skip_edge:
+    }
+    return diff;
+}
+
+// If two max-hint faces are adjacent, only the edge adjacent to the edge where
+// they meet may be unset.
+static int max_face_pair_deductions(solver_state *sstate)
+{
+    int diff = DIFF_MAX;
+    game_state const* state = sstate->state;
+    grid* grid = state->game_grid;
+    for (int i = 0; i < grid->num_edges; i++) {
+        grid_edge* e = grid->edges[i];
+        if (!e->face1 || !e->face2) continue;
+        if (state->clues[e->face1->index] != e->face1->order - 1
+         || state->clues[e->face2->index] != e->face2->order - 1)
+            continue;
+
+        grid_edge* adj[5] = {e};
+        int face1_diff = set_except_adjacent(sstate, e, e->face1, adj+1);
+        diff = min(diff, face1_diff);
+        int face2_diff = set_except_adjacent(sstate, e, e->face2, adj+3);
+        diff = min(diff, face2_diff);
+
+        set_around_dot_except(sstate, e->dot1, adj, 5);
+        set_around_dot_except(sstate, e->dot2, adj, 5);
+    }
+    return diff;
+}
+
+static void apply_startup_deductions(game_state **state)
+{
+    solver_state *sstate = new_solver_state(*state, DIFF_EASY);
+    regenerate_caches(sstate);
+
+    max_face_pair_deductions(sstate);
+
+deep_break:
+    free_game(*state);
+    *state = dup_game(sstate->state);
+cleanup:
+    free_solver_state(sstate);
+}
+
+static void apply_trivial_deductions(game_state **state)
+{
+    solver_state *sstate = new_solver_state(*state, DIFF_EASY);
+    regenerate_caches(sstate);
+    while (true) {
+        int diff = DIFF_MAX;
+        while (true) {
+            int trivial_diff = trivial_deductions(sstate);
+            diff = min(diff, trivial_diff);
+            if (trivial_diff == DIFF_MAX) break;
+            if (sstate->solver_status == SOLVER_MISTAKE) goto deep_break;
+        }
+        int extra_deductions_diff = extra_trivial_deductions(sstate);
+        diff = min(diff, extra_deductions_diff);
+        if (diff == DIFF_MAX) break;
+        if (sstate->solver_status == SOLVER_MISTAKE) break;
+    }
+deep_break:
+    free_game(*state);
+    *state = dup_game(sstate->state);
+cleanup:
+    free_solver_state(sstate);
+}
 typedef struct {
     int distinct_colours;
     int* colours;
