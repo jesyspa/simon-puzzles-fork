@@ -2386,7 +2386,7 @@ static int trivial_deductions(solver_state *sstate)
     return diff;
 }
 
-static int set_except_adjacent(solver_state *sstate, grid_edge *e, grid_face *f, grid_edge **adj)
+static int set_around_face_except_adjacent(solver_state *sstate, grid_edge *e, grid_face *f, grid_edge **adj, enum line_state value)
 {
     int diff = DIFF_MAX;
     int k = 0;
@@ -2402,14 +2402,14 @@ static int set_except_adjacent(solver_state *sstate, grid_edge *e, grid_face *f,
                 continue;
             }
         }
-        if (solver_set_line(sstate, e2->index, LINE_YES)) {
+        if (solver_set_line(sstate, e2->index, value)) {
             diff = min(diff, DIFF_EASY);
         }
     }
     return diff;
 }
 
-static int set_around_dot_except(solver_state *sstate, grid_dot *d, grid_edge **exc, int num_exc)
+static int set_around_dot_except(solver_state *sstate, grid_dot *d, grid_edge **exc, int num_exc, enum line_state value)
 {
     int diff = DIFF_MAX;
     for (int i = 0; i < d->order; i++) {
@@ -2418,7 +2418,7 @@ static int set_around_dot_except(solver_state *sstate, grid_dot *d, grid_edge **
             if (e == exc[j]) goto skip_edge;
         }
 
-        if (solver_set_line(sstate, e->index, LINE_NO)) {
+        if (solver_set_line(sstate, e->index, value)) {
             diff = min(diff, DIFF_EASY);
         }
 
@@ -2442,13 +2442,13 @@ static int max_face_pair_deductions(solver_state *sstate)
             continue;
 
         grid_edge* adj[5] = {e};
-        int face1_diff = set_except_adjacent(sstate, e, e->face1, adj+1);
+        int face1_diff = set_around_face_except_adjacent(sstate, e, e->face1, adj+1, LINE_YES);
         diff = min(diff, face1_diff);
-        int face2_diff = set_except_adjacent(sstate, e, e->face2, adj+3);
+        int face2_diff = set_around_face_except_adjacent(sstate, e, e->face2, adj+3, LINE_YES);
         diff = min(diff, face2_diff);
 
-        set_around_dot_except(sstate, e->dot1, adj, 5);
-        set_around_dot_except(sstate, e->dot2, adj, 5);
+        set_around_dot_except(sstate, e->dot1, adj, 5, LINE_NO);
+        set_around_dot_except(sstate, e->dot2, adj, 5, LINE_NO);
     }
     return diff;
 }
