@@ -2386,7 +2386,7 @@ static int trivial_deductions(solver_state *sstate)
     return diff;
 }
 
-static int set_around_face_except_adjacent(solver_state *sstate, grid_edge *e, grid_face *f, grid_edge **adj, enum line_state value)
+static int set_around_face_except_edge_adjacent(solver_state *sstate, grid_edge *e, grid_face *f, grid_edge **adj, enum line_state value)
 {
     int diff = DIFF_MAX;
     int k = 0;
@@ -2403,6 +2403,23 @@ static int set_around_face_except_adjacent(solver_state *sstate, grid_edge *e, g
             }
         }
         if (solver_set_line(sstate, e2->index, value)) {
+            diff = min(diff, DIFF_EASY);
+        }
+    }
+    return diff;
+}
+
+static int set_around_face_except_dot_adjacent(solver_state *sstate, grid_dot *d, grid_face *f, grid_edge **adj, enum line_state value)
+{
+    int diff = DIFF_MAX;
+    int k = 0;
+    for (int i = 0; i < f->order; i++) {
+        grid_edge* e = f->edges[i];
+        if (e->dot1 == d || e->dot2 == d) {
+            adj[k++] = e;
+            continue;
+        }
+        if (solver_set_line(sstate, e->index, value)) {
             diff = min(diff, DIFF_EASY);
         }
     }
@@ -2427,29 +2444,71 @@ skip_edge:
     return diff;
 }
 
-// If two max-hint faces are adjacent, only the edge adjacent to the edge where
-// they meet may be unset.
+// If two max-clue faces are edge-adjacent, only the edges adjacent to the edge
+// where they meet may be unset; similarly, from those dots, one of those two
+// edges (and the shared edge) are the only ones that may be set.
+// If two max-clue faces are merely dot-adjacent, all their edges not adjacent to that dot
+// are set, and all edges to that dot not adjacent to these edges are unset.
 static int max_face_pair_deductions(solver_state *sstate)
 {
     int diff = DIFF_MAX;
-    game_state const* state = sstate->state;
-    grid* grid = state->game_grid;
+    game_state const *state = sstate->state;
+    grid *grid = state->game_grid;
+
     for (int i = 0; i < grid->num_edges; i++) {
-        grid_edge* e = grid->edges[i];
+        grid_edge *e = grid->edges[i];
         if (!e->face1 || !e->face2) continue;
         if (state->clues[e->face1->index] != e->face1->order - 1
          || state->clues[e->face2->index] != e->face2->order - 1)
             continue;
 
-        grid_edge* adj[5] = {e};
-        int face1_diff = set_around_face_except_adjacent(sstate, e, e->face1, adj+1, LINE_YES);
+        grid_edge *adj[5] = {e};
+        int face1_diff = set_around_face_except_edge_adjacent(sstate, e, e->face1, adj+1, LINE_YES);
         diff = min(diff, face1_diff);
-        int face2_diff = set_around_face_except_adjacent(sstate, e, e->face2, adj+3, LINE_YES);
+        int face2_diff = set_around_face_except_edge_adjacent(sstate, e, e->face2, adj+3, LINE_YES);
         diff = min(diff, face2_diff);
 
         set_around_dot_except(sstate, e->dot1, adj, 5, LINE_NO);
         set_around_dot_except(sstate, e->dot2, adj, 5, LINE_NO);
     }
+
+    for (int i = 0; i < grid->num_dots; i++) {
+        grid_dot *d = grid->dots[i];
+        grid_face *max_clue_faces[2];
+        int num_max_clue = 0;
+
+        for (int j = 0; j < d->order; j++) {
+            grid_face *f = d->faces[j];
+            if (!f) continue;
+            if (state->clues[f->index] == f->order - 1) {
+                max_clue_faces[num_max_clue++] = f;
+            }
+        }
+        
+        // There cannot be more than two max-clue faces, since each contributes one edge to this dot.
+        // If there are fewer than two, then this rule is not applicable here.
+        assert(num_max_clue <= 2);
+        if (num_max_clue < 2) continue;
+
+        // We need to ensure the faces are not edge-adjacent.
+        for (int j = 0; j < max_clue_faces[0]->order; ++j) {
+            grid_edge *e = max_clue_faces[0]->edges[j];
+            if (e->face1 == max_clue_faces[1] || e->face2 == max_clue_faces[1]) {
+                goto already_edge_adjacent;
+            }
+        }
+
+        grid_edge *adj[4];
+        int face1_diff = set_around_face_except_dot_adjacent(sstate, d, max_clue_faces[0], adj, LINE_YES);
+        diff = min(diff, face1_diff);
+        int face2_diff = set_around_face_except_dot_adjacent(sstate, d, max_clue_faces[1], adj+2, LINE_YES);
+        diff = min(diff, face2_diff);
+
+        set_around_dot_except(sstate, d, adj, 4, LINE_NO);
+
+already_edge_adjacent:
+    }
+
     return diff;
 }
 
