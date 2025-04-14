@@ -2847,6 +2847,124 @@ static int incident_edge_deductions(solver_state *sstate)
     return diff;
 }
 
+static int edge_pair_deductions(solver_state *sstate)
+{
+    game_state *state = sstate->state;
+    grid *g = state->game_grid;
+    int diff = DIFF_MAX;
+
+    for (int i = 0; i < g->num_faces; i++) {
+        if (sstate->face_solved[i] || state->clues[i] == -1) continue;
+        grid_face *f = g->faces[i];
+
+        // Status encodings:
+        // 0: unknown, 1: yes, 2: no, 3: half-yes-ext
+        int status[MAX_FACE_SIZE] = {};
+        int num_remaining = state->clues[i] - sstate->face_yes_count[i];
+
+        for (int j = 0; j < f->order; ++j) {
+            grid_edge *e = f->edges[j];
+            if (state->lines[e->index] == LINE_YES) {
+                status[j] = 1;
+            } else if (state->lines[e->index] == LINE_NO) {
+                status[j] = 2;
+            }
+        }
+
+        for (int j = 0; j < f->order; ++j) {
+            grid_dot *d = f->dots[j];
+            if (sstate->dot_yes_count[d->index] != 1) continue;
+            if (d->order - sstate->dot_yes_count[d->index] - sstate->dot_no_count[d->index] != 2) continue;
+
+            grid_edge* half_edges[2];
+            int num_half_edges = 0;
+
+            for (int k = 0; k < d->order; ++k) {
+                grid_edge *e = d->edges[k];
+                bool is_unknown = state->lines[e->index] == LINE_UNKNOWN;
+                bool face_adj = e->face1 == f || e->face2 == f;
+                if (is_unknown != face_adj) goto bad_dot;
+                if (face_adj) {
+                    half_edges[num_half_edges++] = e;
+                }
+            }
+
+            assert(num_half_edges == 2);
+
+            for (int k = 0; k < f->order; ++k) {
+                grid_edge *e = f->edges[k];
+                if (half_edges[0] == e || half_edges[1] == e) {
+                    if (status[k] != 0) goto bad_dot;
+                }
+            }
+
+            num_remaining -= 1;
+            for (int k = 0; k < f->order; ++k) {
+                grid_edge *e = f->edges[k];
+                if (half_edges[0] == e || half_edges[1] == e) {
+                    status[k] = 3;
+                }
+            }
+            continue;
+bad_dot:;
+        }
+
+        // TODO: there is a case when we know about enough edges that they're forced,
+        // that we can fill in the rest as YES, but the naive solution doesn't work.
+        if (num_remaining == 0) {
+            for (int j = 0; j < f->order; ++j) {
+                if (status[j] != 0) continue;
+                grid_edge *e = f->edges[j];
+                bool r = solver_set_line(sstate, e->index, LINE_NO);
+                assert(r);
+                diff = min(diff, DIFF_EASY);
+            }
+        } else if (num_remaining == 1) {
+            // int for internal
+            grid_edge *int_halfyes[2];
+            int num_int_halfyes = 0;
+
+            for (int j = 0; j < f->order; ++j) {
+                if (status[j] != 0) continue;
+                int_halfyes[num_int_halfyes++] = f->edges[j];
+            }
+
+            if (num_int_halfyes == 1) {
+                bool r = solver_set_line(sstate, int_halfyes[0]->index, LINE_YES);
+                assert(r);
+                diff = min(diff, DIFF_EASY);
+                continue;
+            }
+
+            if (num_int_halfyes != 2) continue;
+
+            grid_dot *d;
+            if (int_halfyes[0]->dot1 == int_halfyes[1]->dot1
+              || int_halfyes[0]->dot1 == int_halfyes[1]->dot2) {
+                d = int_halfyes[0]->dot1;
+            } else if (int_halfyes[0]->dot2 == int_halfyes[1]->dot1
+              || int_halfyes[0]->dot2 == int_halfyes[1]->dot2) {
+                d = int_halfyes[0]->dot2;
+            } else continue;
+
+            if (sstate->dot_yes_count[d->index] > 0) continue;
+            if (d->order - sstate->dot_no_count[d->index] != 3) continue;
+
+            for (int j = 0; j < d->order; ++j) {
+                grid_edge *e = d->edges[j];
+                if (state->lines[e->index] != LINE_UNKNOWN) continue;
+                if (e == int_halfyes[0] || e == int_halfyes[1]) continue;
+
+                bool r = solver_set_line(sstate, e->index, LINE_YES);
+                assert(r);
+                diff = min(diff, DIFF_EASY);
+                break;
+            }
+        }
+    }
+    return diff;
+}
+
 
 // Some more deductions that I want loopy to auto-perform for me, but that I don't want
 // to be used in puzzle generation (for one, because if they're buggy then that will be
@@ -2860,6 +2978,8 @@ static int extra_trivial_deductions(solver_state *sstate)
     if (incident_edge_diff != DIFF_MAX) return incident_edge_diff;
     int trivial_arc_diff = trivial_arc_deductions(sstate);
     if (trivial_arc_diff != DIFF_MAX) return trivial_arc_diff; 
+    int edge_pair_diff = edge_pair_deductions(sstate);
+    if (edge_pair_diff != DIFF_MAX) return edge_pair_diff;
     int smaller_loop_diff = check_smaller_loop(sstate);
     if (smaller_loop_diff != DIFF_MAX) return smaller_loop_diff;
     return DIFF_MAX;
